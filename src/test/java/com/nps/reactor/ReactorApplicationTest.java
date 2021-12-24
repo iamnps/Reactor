@@ -110,4 +110,41 @@ class ReactorApplicationTest {
                 .expectNext("Barbossa eats Apples")
                 .verifyComplete();
     }
+
+    /**
+     * first方法会优先发布更快推送出来的流，所以直接把慢的流全部忽略了
+     */
+    @Test
+    public void firstFlux(){
+        Flux<String> slowFlux = Flux.just("tortoise", "snail", "sloth").delaySubscription(Duration.ofMillis(100));
+        Flux<String> fastFlux = Flux.just("hare", "cheetah", "squirrel");
+
+        Flux<String> firstFlux = Flux.firstWithSignal(slowFlux, fastFlux);
+        StepVerifier.create(firstFlux)
+                .expectNext("hare")
+                .expectNext("cheetah")
+                .expectNext("squirrel")
+                .verifyComplete();
+    }
+
+    /**
+     * skip方法可以跳过指定个数的数据项
+     */
+    @Test
+    public void skipAFew(){
+        Flux<String> skipFlux = Flux.just("one", "two", "skip a few", "ninety nine", "one hundred").skip(1);
+
+        StepVerifier.create(skipFlux).expectNext("two", "skip a few","ninety nine", "one hundred").verifyComplete();
+    }
+
+    /**
+     * skip方法还可以指定跳过的时间
+     */
+    @Test
+    public void skipAFewSeconds(){
+        Flux<String> skipFlux = Flux.just("one", "two", "skip a few", "ninety nine", "one hundred")
+                .delayElements(Duration.ofSeconds(1)).skip(Duration.ofSeconds(2));
+
+        StepVerifier.create(skipFlux).expectNext("two", "skip a few","ninety nine", "one hundred").verifyComplete();
+    }
 }
