@@ -2,12 +2,17 @@ package com.nps.reactor;
 
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.util.function.Tuple2;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -147,4 +152,144 @@ class ReactorApplicationTest {
 
         StepVerifier.create(skipFlux).expectNext("two", "skip a few","ninety nine", "one hundred").verifyComplete();
     }
+
+    /**
+     * take方法可以指定只接收的数据项个数
+     */
+    @Test
+    public void take(){
+        Flux<String> nationalParkFlux = Flux.just("Yellowstone", "Yosemite", "Grand Canyon", "Zion", "Grand Teton").take(4);
+
+        StepVerifier.create(nationalParkFlux)
+                .expectNext("Yellowstone", "Yosemite", "Grand Canyon", "Zion")
+                .verifyComplete();
+    }
+
+    /**
+     * 于skip一样，take也可以指定订阅之后发布的时间，超过这个时间的数据项就不再接收
+     */
+    @Test
+    public void take2(){
+        Flux<String> nationalParkFlux = Flux.just("Yellowstone", "Yosemite", "Grand Canyon", "Zion", "Grand Teton")
+                .delayElements(Duration.ofSeconds(1))
+                .take(Duration.ofMillis(4500));
+
+        StepVerifier.create(nationalParkFlux)
+                .expectNext("Yellowstone", "Yosemite", "Grand Canyon", "Zion")
+                .verifyComplete();
+    }
+
+    /**
+     * filter能根据给定的条件过滤数据项
+     */
+    @Test
+    public void filter(){
+        Flux<String> nationalParkFlux = Flux.just("Yellowstone", "Yosemite", "Grand Canyon", "Zion", "Grand Teton")
+                .filter(np -> !np.contains("t"));
+
+        StepVerifier.create(nationalParkFlux)
+                .expectNext("Grand Canyon", "Zion")
+                .verifyComplete();
+    }
+
+    /**
+     * distinct方法可以过滤掉重复的数据项
+     */
+    @Test
+    public void distinct(){
+        Flux<String> animalFlux = Flux.just("dog", "cat", "pig", "dog", "pig", "bird").distinct();
+
+        StepVerifier.create(animalFlux)
+                .expectNext("dog", "cat", "pig", "bird").verifyComplete();
+    }
+
+    static class Player{
+        private String firstName;
+        private String lastName;
+
+        Player(String firstName, String lastName){
+            this.firstName = firstName;
+            this.lastName = lastName;
+        }
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(String firstName) {
+            this.firstName = firstName;
+        }
+
+        public String getLastName() {
+            return lastName;
+        }
+
+        public void setLastName(String lastName) {
+            this.lastName = lastName;
+        }
+    }
+
+    /**
+     * map方法可以将原本发布的数据变为想要的格式类型
+     */
+    @Test
+    public void mapFlux(){
+        Flux<Player> playerFlux = Flux.just("Michael Jordan", "Scottie Pippen", "Steve Kerr")
+                .map(n -> {
+                    String[] split = n.split("\\s");
+                    return new Player(split[0], split[1]);
+                });
+
+        StepVerifier.create(playerFlux)
+                .expectNextMatches(p -> p.getFirstName().equals("Michael") && p.getLastName().equals("Jordan"))
+                .expectNextMatches(p -> p.getFirstName().equals("Scottie") && p.getLastName().equals("Pippen"))
+                .expectNextMatches(p -> p.getFirstName().equals("Steve") && p.getLastName().equals("Kerr"))
+                .verifyComplete();
+    }
+
+    /**
+     * flatmap就是异步执行map的操作（使用Schedulers.parallel方法）
+     */
+    @Test
+    public void flatMapFlux(){
+        Flux<Player> playerFlux = Flux.just("Michael Jordan", "Scottie Pippen", "Steve Kerr")
+                .flatMap(n -> Mono.just(n).map(p -> {
+                    String[] split = n.split("\\s");
+                    return new Player(split[0], split[1]);
+                }).subscribeOn(Schedulers.single())//single()会使用单个线程来执行订阅操作，只是为了保证顺序来让测试通过而已
+                );
+
+        StepVerifier.create(playerFlux)
+                .expectNextMatches(p -> p.getFirstName().equals("Michael") && p.getLastName().equals("Jordan"))
+                .expectNextMatches(p -> p.getFirstName().equals("Scottie") && p.getLastName().equals("Pippen"))
+                .expectNextMatches(p -> p.getFirstName().equals("Steve") && p.getLastName().equals("Kerr"))
+                .verifyComplete();
+    }
+
+    /**
+     * buffer操作可以产生一个新的flux列表
+     */
+    @Test
+    public void buffer(){
+        Flux<String> fruitFlux = Flux.just("apple", "orange", "banana", "kiwi", "strawberry");
+        Flux<List<String>> bufferedFlux = fruitFlux.buffer(2);
+
+        StepVerifier.create(bufferedFlux)
+                .expectNext(Arrays.asList("apple", "orange"))
+                .expectNext(Arrays.asList("banana", "kiwi"))
+                .expectNext(Arrays.asList("strawberry"))
+                .verifyComplete();
+    }
+
+    @Test
+    public void bufferAndFlat(){
+        Flux.just("apple", "orange", "banana", "kiwi", "strawberry")
+                .buffer(3)
+                .flatMap(x ->
+                        Flux.fromIterable(x)
+                                .map(y -> y.toUpperCase(Locale.ROOT))
+                                .subscribeOn(Schedulers.parallel()).log()
+                ).subscribe();
+    }
+
 }
